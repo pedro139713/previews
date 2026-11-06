@@ -195,6 +195,9 @@ footer.ft b{color:#fff}
     <div class="f"><label>Headline <em>(auto-filled — edit if you want)</em></label><input id="headline"></div>
     <div class="f"><label>Services <em>(one per line — "Title: description")</em></label><textarea id="services"></textarea></div>
 
+    <div class="sec">Sent By</div>
+    <div class="f"><label>Your name <em>(for the log — not shown to the client)</em></label><input id="rep" placeholder="e.g. Marcus"></div>
+
     <div class="sec">Your Contact (shows on the preview banner)</div>
     <div class="row">
       <div class="f"><label>Contact name</label><input id="cName" placeholder="Andrew"></div>
@@ -233,6 +236,8 @@ footer.ft b{color:#fff}
    ==================================================================== */
 const DEFAULT_CONTACT = { name: "Andrew", phone: "(915) 727-4506" };
 const CREDIT = "Andrew Pedregon";
+/* Google Sheet log — paste your Apps Script web app URL here. Leave "" to turn logging off. */
+const LOG_URL = "";
 
 const PALETTES = ["#c8281e","#e8641b","#1f5fbf","#13795b","#2b2b2b","#7a3fd1","#0e8a99","#b8860b"];
 
@@ -455,7 +460,8 @@ function initBuilder(){
   // remember the rep's contact info on this device
   F("cName").value = store.get("pb_cName") || DEFAULT_CONTACT.name;
   F("cPhone").value = store.get("pb_cPhone") || DEFAULT_CONTACT.phone;
-  ["cName","cPhone"].forEach(k=>F(k).addEventListener("change",()=>store.set("pb_"+k,F(k).value.trim())));
+  F("rep").value = store.get("pb_rep") || "";
+  ["rep","cName","cPhone"].forEach(k=>F(k).addEventListener("change",()=>store.set("pb_"+k,F(k).value.trim())));
 
   F("headline").addEventListener("input",()=>{headlineTouched=true});
   F("services").addEventListener("input",()=>{servicesTouched=true});
@@ -463,15 +469,31 @@ function initBuilder(){
   F("panel").addEventListener("input",refresh);
   F("panel").addEventListener("change",refresh);
 
+  function logSend(action){
+    if(!LOG_URL) return;
+    const d = collect();
+    const payload = JSON.stringify({ action, rep:F("rep").value.trim(), name:d.name, trade:(TRADES[d.trade]||{}).label||d.trade,
+      city:d.city, phone:d.phone, email:d.email, link:link() });
+    try{
+      const blob = new Blob([payload],{type:"text/plain"});
+      if(!(navigator.sendBeacon && navigator.sendBeacon(LOG_URL, blob)))
+        fetch(LOG_URL,{method:"POST",mode:"no-cors",keepalive:true,headers:{"Content-Type":"text/plain"},body:payload});
+    }catch(e){ console.warn("log failed",e); }
+  }
+
   F("copyBtn").onclick = async ()=>{
     if(!F("name").value.trim()||!F("phone").value.trim()){ toast("Add at least the business name and phone"); return; }
+    if(!F("rep").value.trim()){ toast("Add your name under Sent By first"); F("rep").focus(); return; }
     const l = link();
+    logSend("Copied link");
     try{ await navigator.clipboard.writeText(l); toast("Preview link copied ✓"); }
     catch(e){ prompt("Copy this link:", l); }
   };
   F("smsBtn").onclick = ()=>{
     if(!F("name").value.trim()){ toast("Add the business name first"); return; }
-    const who = F("cName").value.trim() || DEFAULT_CONTACT.name;
+    if(!F("rep").value.trim()){ toast("Add your name under Sent By first"); F("rep").focus(); return; }
+    logSend("Texted");
+    const who = F("rep").value.trim();
     const body = `Hey! This is ${who}. I put together a free website preview for ${F("name").value.trim()} — take a look: ${link()}`;
     location.href = "sms:" + F("phone").value.replace(/[^\d+]/g,"") + "?&body=" + encodeURIComponent(body);
   };
